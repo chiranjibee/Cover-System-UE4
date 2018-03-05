@@ -16,9 +16,8 @@ ACoverActor::ACoverActor()
 	CoverMesh->SetCollisionResponseToChannel(ECollisionChannel::ECC_GameTraceChannel1, ECollisionResponse::ECR_Block);
 
 	CoverVolume = CreateDefaultSubobject<UBoxComponent>(TEXT("CoverVolume"));
-	CoverVolume->AttachToComponent(CoverMesh, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
-	CoverVolume->bGenerateOverlapEvents = true;
-	CoverVolume->SetCollisionResponseToChannel(ECollisionChannel::ECC_Visibility, ECollisionResponse::ECR_Block);
+	CoverVolume->AttachToComponent(SceneComponent, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+	CoverVolume->SetBoxExtent(FVector(200.0f));
 }
 
 void ACoverActor::BeginPlay()

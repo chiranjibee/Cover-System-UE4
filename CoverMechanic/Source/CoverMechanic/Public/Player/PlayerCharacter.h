@@ -75,8 +75,6 @@ protected:
 
 	void MoveForward(float Value);
 	void MoveRight(float Value);
-	void TurnAtRate(float Value);
-	void LookUpAtRate(float Value);
 	void CoverPressed();
 
 	void GetCover();

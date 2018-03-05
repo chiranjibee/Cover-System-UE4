@@ -113,16 +113,6 @@ void APlayerCharacter::MoveRight(float Value)
 	}
 }
 
-void APlayerCharacter::TurnAtRate(float Value)
-{
-	AddControllerYawInput(Value * BaseTurnRate * GetWorld()->GetDeltaSeconds());
-}
-
-void APlayerCharacter::LookUpAtRate(float Value)
-{
-	AddControllerPitchInput(Value * BaseLookUpRate * GetWorld()->GetDeltaSeconds());
-}
-
 void APlayerCharacter::CoverPressed()
 {
 	if (bIsInCoverVolume && !bIsCovered)
@@ -139,53 +129,46 @@ void APlayerCharacter::CoverPressed()
 
 void APlayerCharacter::GetCover()
 {
-	if (bIsCovered)
+	//forward trace
+	FHitResult LineTraceHitResult = FHitResult(ForceInit);
+	FCollisionQueryParams LineTraceQueryParams = FCollisionQueryParams(TEXT("LineTraceQueryParams"), true, this);
+	FVector CoverMeshForwardDirection = CurrentCover->GetActorForwardVector();
+
+	float DotProductFactor = FVector::DotProduct(GetActorForwardVector(), CoverMeshForwardDirection) > 0.0f ? 1.0f : -1.0f;
+
+	const FVector LineTraceStart = GetActorLocation();
+	const FVector LineTraceEnd = LineTraceStart + (DotProductFactor) * (CoverMeshForwardDirection * WallForwardTraceDistance);
+	bool LineTraceOutput = GetWorld()->LineTraceSingleByChannel(LineTraceHitResult, LineTraceStart, LineTraceEnd, ECollisionChannel::ECC_GameTraceChannel1, LineTraceQueryParams);
+
+	//debug line
+	DrawDebugLine(GetWorld(), LineTraceStart, LineTraceEnd, FColor::Red, false, 5.0f, 0, 1.0f);
+
+	if (LineTraceOutput)
 	{
-		LeaveCover();
-	}
-	else
-	{
-		//forward trace
-		FHitResult LineTraceHitResult = FHitResult(ForceInit);
-		FCollisionQueryParams LineTraceQueryParams = FCollisionQueryParams(TEXT("LineTraceQueryParams"), true, this);
-		FVector CoverMeshForwardDirection = CurrentCover->GetActorForwardVector();
+		//UE_LOG(LogTemp, Warning, TEXT("Line Trace Output Successful"));
 
-		float DotProductFactor = FVector::DotProduct(GetActorForwardVector(), CoverMeshForwardDirection) > 0.0f ? 1.0f : -1.0f;
+		WallLocation = LineTraceHitResult.Location;
+		WallNormal = LineTraceHitResult.ImpactNormal;
 
-		const FVector LineTraceStart = GetActorLocation();
-		const FVector LineTraceEnd = LineTraceStart + (DotProductFactor) * (CoverMeshForwardDirection * WallForwardTraceDistance);
-		bool LineTraceOutput = GetWorld()->LineTraceSingleByChannel(LineTraceHitResult, LineTraceStart, LineTraceEnd, ECollisionChannel::ECC_GameTraceChannel1, LineTraceQueryParams);
+		float XDistance = GetActorForwardVector().X * PlayerToWallDistance;
+		float YDistance = GetActorForwardVector().Y * PlayerToWallDistance;
 
-		//debug line
-		DrawDebugLine(GetWorld(), LineTraceStart, LineTraceEnd, FColor::Red, false, 5.0f, 0, 1.0f);
+		//the target location
+		FVector TargetLocation = FVector(WallLocation.X - XDistance, WallLocation.Y - YDistance, GetActorLocation().Z);
 
-		if (LineTraceOutput)
-		{
-			//UE_LOG(LogTemp, Warning, TEXT("Line Trace Output Successful"));
+		//the target rotation
+		FVector UpVector = GetCapsuleComponent()->GetUpVector();
+		FRotator TargetRotation = UKismetMathLibrary::MakeRotFromXZ(WallNormal, UpVector);
 
-			WallLocation = LineTraceHitResult.Location;
-			WallNormal = LineTraceHitResult.ImpactNormal;
+		FLatentActionInfo LatentAction;
+		LatentAction.CallbackTarget = this;
 
-			float XDistance = GetActorForwardVector().X * PlayerToWallDistance;
-			float YDistance = GetActorForwardVector().Y * PlayerToWallDistance;
+		//move
+		UKismetSystemLibrary::MoveComponentTo(GetCapsuleComponent(), TargetLocation, TargetRotation, true, false, GetWorld()->GetDeltaSeconds() * 10.0f, false, EMoveComponentAction::Move, LatentAction);
 
-			//the target location
-			FVector TargetLocation = FVector(WallLocation.X - XDistance, WallLocation.Y - YDistance, GetActorLocation().Z);
-
-			//the target rotation
-			FVector UpVector = GetCapsuleComponent()->GetUpVector();
-			FRotator TargetRotation = UKismetMathLibrary::MakeRotFromXZ(WallNormal, UpVector);
-
-			FLatentActionInfo LatentAction;
-			LatentAction.CallbackTarget = this;
-
-			//move
-			UKismetSystemLibrary::MoveComponentTo(GetCapsuleComponent(), TargetLocation, TargetRotation, true, false, GetWorld()->GetDeltaSeconds() * 10.0f, false, EMoveComponentAction::Move, LatentAction);
-
-			//set PlayerCharacter to be in cover
-			bIsCovered = true;
-			GetCharacterMovement()->bOrientRotationToMovement = false;
-		}
+		//set PlayerCharacter to be in cover
+		bIsCovered = true;
+		GetCharacterMovement()->bOrientRotationToMovement = false;
 	}
 }
 
@@ -206,13 +189,13 @@ bool APlayerCharacter::CanMoveInCover(float Value)
 	FVector LineTraceStart;
 	FVector LineTraceEnd;
 
-	FVector UnitRightVector = FVector::CrossProduct(GetActorForwardVector(), GetCapsuleComponent()->GetUpVector()) / (FVector::CrossProduct(GetActorForwardVector(), GetCapsuleComponent()->GetUpVector())).Size();
+	FVector UnitRightVector = FVector::CrossProduct(GetCapsuleComponent()->GetUpVector(), GetActorForwardVector()) / (FVector::CrossProduct(GetCapsuleComponent()->GetUpVector(), GetActorForwardVector())).Size();
 
 	//left pressed - move to right
 	if (CurrentCover && Value < 0.0f)
 	{
 		bool bCanMoveLeft = false;
-		LineTraceStart = GetActorLocation() + (-UnitRightVector * SidewayTraceDistance);
+		LineTraceStart = GetActorLocation() + (UnitRightVector * SidewayTraceDistance);
 		LineTraceEnd = LineTraceStart + (-DotProductFactor * CoverMeshForwardDirection * WallForwardTraceDistance);
 
 		//UE_LOG(LogTemp, Warning, TEXT("LineTraceStartL %s"), *LineTraceStart.ToString());
@@ -226,7 +209,7 @@ bool APlayerCharacter::CanMoveInCover(float Value)
 		if (bCanMoveLeft)
 		{
 			WallLocation = LineTraceHitResult.Location;
-			WallNormal = LineTraceHitResult.Normal;
+			WallNormal = LineTraceHitResult.ImpactNormal;
 		}
 
 		return bCanMoveLeft;
@@ -236,7 +219,7 @@ bool APlayerCharacter::CanMoveInCover(float Value)
 	else if (CurrentCover && Value > 0.0f)
 	{
 		bool bCanMoveRight = false;
-		LineTraceStart = GetActorLocation() + (UnitRightVector * SidewayTraceDistance);
+		LineTraceStart = GetActorLocation() + (-UnitRightVector * SidewayTraceDistance);
 		LineTraceEnd = LineTraceStart + (-DotProductFactor * CoverMeshForwardDirection * WallForwardTraceDistance);
 
 		//UE_LOG(LogTemp, Warning, TEXT("LineTraceStartR %s"), *LineTraceStart.ToString());
@@ -250,7 +233,7 @@ bool APlayerCharacter::CanMoveInCover(float Value)
 		if (bCanMoveRight)
 		{
 			WallLocation = LineTraceHitResult.Location;
-			WallNormal = LineTraceHitResult.Normal;
+			WallNormal = LineTraceHitResult.ImpactNormal;
 		}
 
 		return bCanMoveRight;
@@ -270,8 +253,6 @@ void APlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 	PlayerInputComponent->BindAxis("MoveRight", this, &APlayerCharacter::MoveRight);
 	PlayerInputComponent->BindAxis("Turn", this, &APawn::AddControllerYawInput);
 	PlayerInputComponent->BindAxis("LookUp", this, &APawn::AddControllerPitchInput);
-	PlayerInputComponent->BindAxis("TurnRate", this, &APlayerCharacter::TurnAtRate);
-	PlayerInputComponent->BindAxis("LookUpRate", this, &APlayerCharacter::LookUpAtRate);
 
 	PlayerInputComponent->BindAction("TakeCover", EInputEvent::IE_Pressed, this, &APlayerCharacter::CoverPressed);
 }
